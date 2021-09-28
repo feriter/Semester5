@@ -3,7 +3,8 @@ DataBases/
 flow9/
 OOAD/
 OSs/
-Translation/
+Translation/*.bytecode
+Translation/*.debug
 Nets/lab?/CmakeLists.txt
 Nets/lab?/cmake-build-debug/
 Nets/lab?/.idea/

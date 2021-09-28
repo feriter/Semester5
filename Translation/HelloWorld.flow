@@ -1,0 +1,152 @@
+import runtime;
+import lingo/pegcode/driver;
+import string;
+import ds/array;
+import ds/arrayutils;
+import sys/system;
+
+sumF(a : int, b : int) -> int { a + b; }
+subF(a : int, b : int) -> int { a - b; }
+prodF(a : int, b : int) -> int { a * b; }
+divF(a : int, b : int) -> int { a / b; }
+
+ArExp ::= ArOp, ArInt;
+ArOp : (op : (int, int) -> int, l : ArExp, r : ArExp, c : string);
+ArInt : (val : int);
+
+RpnEl ::= RpnOp, RpnVal;
+RpnVal : (val : int);
+RpnOp : (op : (int, int) -> int, c : string);
+
+// there is no such structure 'map' in flow, so i used tree instead
+variables : Tree<string, [int]> = pairs2tree([
+    Pair("x", [2]), // x = 2
+    Pair("y", [4]), // y = 4
+    Pair("seven", [7]) // guess what
+]);
+
+parse(str : string) -> Maybe<ArExp> {
+    gram = "#include exp.lingo";
+    parser = compilePegGrammar(gram);
+    result = parsic3(parser, str, 
+        SemanticActions(mergeTree(defaultPegActions.t, 
+            pairs2tree([
+                Pair("sumOp", \s -> 
+                    ArOp(sumF, s[0], s[1], "+")
+                ),
+                Pair("subOp", \s ->
+                    ArOp(subF, s[0], s[1], "-")
+                ),
+                Pair("prodOp", \s ->
+                    ArOp(prodF, s[0], s[1], "*")
+                ),
+                Pair("divOp", \s ->
+                    ArOp(divF, s[0], s[1], "/")
+                ),
+                Pair("variable", \s ->
+                    ArInt(getTreeArrayValue(variables, s[0])[0])
+                )
+            ])
+        )), 
+        ArInt(0)
+    );
+    if (result.third == "") Some(result.first) else None();
+}
+
+ar2i(a : ArExp) -> int {
+    switch(a) {
+        ArOp(func, first, second, c) : func(ar2i(first), ar2i(second));
+        ArInt(value) : value;
+    }
+}
+
+ar2s(a : ArExp) -> string {
+    switch(a) {
+        ArOp(func, first, second, c) : "(" + ar2s(first) + c + ar2s(second) + ")";
+        ArInt(value) : i2s(value);
+    }
+}
+
+ar2rpn(a : ArExp) -> [RpnEl] {
+    switch(a) {
+        ArOp(func, first, second, c) : concat(ar2rpn(first), concat(ar2rpn(second), [RpnOp(func, c)]));
+        ArInt(value) : [RpnVal(value)];
+    }
+}
+
+rpn2i(a : [RpnEl]) -> Maybe<int> {
+    stack : ref [int] = ref [];
+    iteri(a, \i, elem -> {
+        switch(elem) {
+            RpnVal(val) : refArrayPush(stack, val);
+            RpnOp(op, c) : {
+                fir : int = lastElement(^stack, 0);
+                stack := removeLastElement(^stack);
+                sec : int = lastElement(^stack, 0);
+                stack := removeLastElement(^stack);
+                refArrayPush(stack, op(sec, fir));
+            };
+        }
+    });
+    if (length(^stack) == 0) {
+        None();
+    } else {
+        Some(^stack[0]);
+    }
+}
+
+rpn2ar(r : [RpnEl]) -> ArExp {
+    stack : ref [ArExp] = ref [];
+    iteri(r, \i, elem -> {
+        switch(elem) {
+            RpnOp(op, c): {
+                fir : ArExp = lastElement(^stack, ArInt(0));
+                stack := removeLastElement(^stack);
+                sec : ArExp = lastElement(^stack, ArInt(0));
+                stack := removeLastElement(^stack);
+                refArrayPush(stack, ArOp(op, sec, fir, c));
+            };
+            RpnVal(val): refArrayPush(stack, ArInt(val));
+        };
+    });
+    ^stack[0];
+}
+
+getChar(r : RpnEl) -> string {
+    switch(r) {
+        RpnVal(val) : i2s(val);
+        RpnOp(op, c) : c;
+    }
+}
+
+rpn2s(a : [RpnEl]) -> string {
+    result : string = fold(a, "", \result, element -> {
+        switch(element) {
+            RpnVal(value) : result + i2s(value) + " ";
+            RpnOp(op, c) : result + c + " ";
+        }
+    });
+    result;
+}
+
+main() {
+    expr = "( y * (x + ( ( seven * 2 ) - 5 ) ) )";
+    a = parse(expr);
+    switch(a : Maybe<ArExp>) {
+        None() : println("Parsing error (runtime)");
+        Some(arExp) : {
+            println("Arithmetical expression : " + expr);
+            print("Parsed into : ");
+            println(arExp);
+            rpn = ar2rpn(arExp);
+            rpnVal = rpn2i(rpn);
+            println("Reverse Polish notation : " + rpn2s(rpn));
+            switch(rpnVal) {
+                None() : println("Incorrect expression");
+                Some(val) : println("Its value : " + i2s(val));
+            }
+            print("Reverse Polish notation converted back to arithmetical expression : ");
+            println(rpn2ar(rpn));
+        }
+    };
+}
