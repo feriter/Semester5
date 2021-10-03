@@ -8,3 +8,4 @@ Translation/*.debug
 Nets/lab?/CmakeLists.txt
 Nets/lab?/cmake-build-debug/
 Nets/lab?/.idea/
+Nets/lab?/*.iml

@@ -5,42 +5,27 @@ import ds/array;
 import ds/arrayutils;
 import sys/system;
 
-// Functions in flow are written like this : func(arg1 : int, arg2 : string) -> returnValue {body of function;}
-// Functions are almost like objects so they can be arguments as well, i.e. func2(arg1 : (string, int) -> int, arg2 : int)
 sumF(a : int, b : int) -> int { a + b; }
 subF(a : int, b : int) -> int { a - b; }
 prodF(a : int, b : int) -> int { a * b; }
 divF(a : int, b : int) -> int { a / b; }
 
-// Union structure (it can be either ArOp or ArInt). The same union as union in C. For more info go on wiki.
-ArExp ::= ArOp, ArInt; // ArithmeticalExpression
-// Common user structure that takes fields as arguments.
-ArOp : (op : (int, int) -> int, l : ArExp, r : ArExp, c : string); // ArithmeticalOperation
-ArInt : (val : int); // ArithmeticalInteger
+ArExp ::= ArOp, ArInt;
+ArOp : (op : (int, int) -> int, l : ArExp, r : ArExp, c : string);
+ArInt : (val : int);
 
-// Union again.
-RpnEl ::= RpnOp, RpnVal; // RpnElement
-RpnVal : (val : int); // RpnValue
-RpnOp : (op : (int, int) -> int, c : string); // RpnOperation
+RpnEl ::= RpnOp, RpnVal;
+RpnVal : (val : int);
+RpnOp : (op : (int, int) -> int, c : string);
 
-// There is no such structure 'map' in flow, so i used tree instead
-variables : Tree<string, [int]> = pairs2tree([
-    Pair("x", [2]), // x = 2
-    Pair("y", [4]), // y = 4
-    Pair("seven", [7]) // guess what
-]);
+// there is no such structure 'map' in flow, so i used tree instead
+variables : ref Tree<string, [int]> = ref TreeEmpty();
 
-// Function that parses input string to a tree of expressions. If input string can't be parsed, None() is returned.
-// Maybe<ArExp> is another struct that is in fact a union of Some(ArExp) and None().
-// So basically Maybe<ArExp> can be: None(), Some(ArOp) or Some(ArInt), but in switch you analyze only Some(ArExp) and then do another switch.
 parse(str : string) -> Maybe<ArExp> {
-    // I don't fully understand that part so i'll skip it
-    // Note that file "exp.lingo" is not system file but yours, it goes together with this one.
     gram = "#include exp.lingo";
     parser = compilePegGrammar(gram);
     result = parsic3(parser, str, 
-    // This part is needed to add 'semantic actions' from "exp.lingo".
-        SemanticActions(mergeTree(defaultPegActions.t, 
+        SemanticActions(mergeTree(defaultPegActions.t,
             pairs2tree([
                 Pair("sumOp", \s -> 
                     ArOp(sumF, s[0], s[1], "+")
@@ -55,8 +40,12 @@ parse(str : string) -> Maybe<ArExp> {
                     ArOp(divF, s[0], s[1], "/")
                 ),
                 Pair("variable", \s ->
-                    ArInt(getTreeArrayValue(variables, s[0])[0])
-                )
+                    ArInt(lastElement(getTreeArrayValue(^variables, s[0]), 0))
+                ),
+                Pair("assign", \s -> {
+                    variables := mergeTree(^variables, makeTree1(s[0], [ar2i(s[1])]));
+                    ArInt(ar2i(s[1]));
+                })
             ])
         )), 
         ArInt(0)
@@ -64,16 +53,13 @@ parse(str : string) -> Maybe<ArExp> {
     if (result.third == "") Some(result.first) else None();
 }
 
-// Counts the value of expression given in form of tree.
 ar2i(a : ArExp) -> int {
-    // You must use switch to handle union structures.
     switch(a) {
         ArOp(func, first, second, c) : func(ar2i(first), ar2i(second));
         ArInt(value) : value;
     }
 }
 
-// Converts expression tree to an expression like you would write it on paper (basically reverse parse function).
 ar2s(a : ArExp) -> string {
     switch(a) {
         ArOp(func, first, second, c) : "(" + ar2s(first) + c + ar2s(second) + ")";
@@ -81,7 +67,6 @@ ar2s(a : ArExp) -> string {
     }
 }
 
-// Converts expression tree to Reverse Polish Notation (RPN) (see wiki).
 ar2rpn(a : ArExp) -> [RpnEl] {
     switch(a) {
         ArOp(func, first, second, c) : concat(ar2rpn(first), concat(ar2rpn(second), [RpnOp(func, c)]));
@@ -89,7 +74,6 @@ ar2rpn(a : ArExp) -> [RpnEl] {
     }
 }
 
-// Counts the value of expression given in RPN form
 rpn2i(a : [RpnEl]) -> Maybe<int> {
     stack : ref [int] = ref [];
     iteri(a, \i, elem -> {
@@ -111,7 +95,6 @@ rpn2i(a : [RpnEl]) -> Maybe<int> {
     }
 }
 
-// Reverse ar2rpn function
 rpn2ar(r : [RpnEl]) -> ArExp {
     stack : ref [ArExp] = ref [];
     iteri(r, \i, elem -> {
@@ -129,7 +112,6 @@ rpn2ar(r : [RpnEl]) -> ArExp {
     ^stack[0];
 }
 
-// Returns a string from given element of RPN
 getChar(r : RpnEl) -> string {
     switch(r) {
         RpnVal(val) : i2s(val);
@@ -137,7 +119,6 @@ getChar(r : RpnEl) -> string {
     }
 }
 
-// Converts expression given in RPN form to string (saving notation rules)
 rpn2s(a : [RpnEl]) -> string {
     result : string = fold(a, "", \result, element -> {
         switch(element) {
@@ -149,23 +130,39 @@ rpn2s(a : [RpnEl]) -> string {
 }
 
 main() {
-    expr = "( y * (x + ( ( seven * 2 ) - 5 ) ) )";
-    a = parse(expr);
-    switch(a : Maybe<ArExp>) {
-        None() : println("Parsing error (runtime)");
-        Some(arExp) : {
-            println("Arithmetical expression : " + expr);
-            print("Parsed into : ");
-            println(arExp);
-            rpn = ar2rpn(arExp);
-            rpnVal = rpn2i(rpn);
-            println("Reverse Polish notation : " + rpn2s(rpn));
-            switch(rpnVal) {
-                None() : println("Incorrect expression");
-                Some(val) : println("Its value : " + i2s(val));
-            }
-            print("Reverse Polish notation converted back to arithmetical expression : ");
-            println(rpn2ar(rpn));
+    code : [string] = [
+        "x = 2;",
+        "y = 4;",
+        "seven = 7;",
+        "five = 5;",
+        "result = (y * (x + ((seven * 2) - five)));"
+    ];
+    iter(code, \s -> {
+        a = parse(s);
+        switch(a : Maybe<ArExp>) {
+            None() : println("no return");
+            Some(arExp) : println(arExp);
         }
-    };
+    });
+    println(^variables);
+    
+    // expr = "( 4 * (2 + ( ( 7 * 2 ) - 5 ) ) )";
+    // a = parse(expr);
+    // switch(a : Maybe<ArExp>) {
+    //     None() : println("Parsing error (runtime)");
+    //     Some(arExp) : {
+    //         println("Arithmetical expression : " + expr);
+    //         print("Parsed into : ");
+    //         println(arExp);
+    //         rpn = ar2rpn(arExp);
+    //         rpnVal = rpn2i(rpn);
+    //         println("Reverse Polish notation : " + rpn2s(rpn));
+    //         switch(rpnVal) {
+    //             None() : println("Incorrect expression");
+    //             Some(val) : println("Its value : " + i2s(val));
+    //         }
+    //         print("Reverse Polish notation converted back to arithmetical expression : ");
+    //         println(rpn2ar(rpn));
+    //     }
+    // };
 }
