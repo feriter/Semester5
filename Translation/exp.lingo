@@ -1,4 +1,3 @@
-assignment = " "* letter+ $w " "*"="" "* exp:val " "*";" {assign($w, :val)};
 exp = sum|sub|prod|div|int|var;
 sum = " "*"("" "* exp:l " "*"+"" "* exp:r " "*")"" "* {sumOp(:l, :r)};
 sub = " "*"("" "* exp:l " "*"-"" "* exp:r " "*")"" "* {subOp(:l, :r)};
