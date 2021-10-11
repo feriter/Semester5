@@ -10,6 +10,10 @@ subF(a : int, b : int) -> int { a - b; }
 prodF(a : int, b : int) -> int { a * b; }
 divF(a : int, b : int) -> int { a / b; }
 
+Polynom : (p : Tree<Monom, int>);
+Monom : (m : Tree<string, int>);
+Frac : (top : Polynom, bot : Polynom);
+
 ArExp ::= ArOp, ArInt, ArVar;
 ArOp : (op : (int, int) -> int, l : ArExp, r : ArExp, c : string);
 ArInt : (val : int);
@@ -78,7 +82,7 @@ deriv(a : ArExp, var : string) -> ArExp {
             } else if (c == "-") {
                 result := ArOp(op, deriv(l, var), deriv(r, var), c);
             } else if (c == "*") {
-                result := ArOp(sumF, ArOp(op, deriv(l, var), r, c), ArOp(op, l, deriv(r, var), c), "+");
+                result := ArOp(sumF, ArOp(prodF, deriv(l, var), r, "*"), ArOp(prodF, l, deriv(r, var), "*"), "+");
             } else {
                 result := ArOp(divF, 
                 ArOp(subF, ArOp(prodF, deriv(l, var), r, "*"), ArOp(prodF, l, deriv(r, var), "*"), "-"), 
@@ -97,19 +101,20 @@ deriv(a : ArExp, var : string) -> ArExp {
     simplify(^result);
 }
 
+// This function is not needed for counting with polynoms
 simplify(a : ArExp) -> ArExp {
     switch(a : ArExp) {
         ArOp(op, l, r, c) : {
             ll = simplify(l);
             rr = simplify(r);
             if (c == "+" || c == "-") {
-                 if (ll == ArInt(0)) {
-                     rr;
-                 } else if (rr == ArInt(0)) {
-                     ll;
-                 } else {
-                     ArOp(op, ll, rr, c);
-                 }
+                if (ll == ArInt(0)) {
+                    rr;
+                } else if (rr == ArInt(0)) {
+                    ll;
+                } else {
+                    ArOp(op, ll, rr, c);
+                }
             } else {
                 if (ll == ArInt(1)) {
                     rr;
@@ -127,16 +132,144 @@ simplify(a : ArExp) -> ArExp {
     }
 }
 
+minusPoly(p : Polynom) -> Polynom {
+    Polynom(mapTree(p.p, \c -> -c));
+}
+
+monProd(f : Monom, s : Monom) -> Monom {
+    Monom(mergeTreeCustom(f.m, s.m, \var, a, b -> a + b));
+}
+
+polySum(f : Polynom, s : Polynom) -> Polynom {
+    Polynom(mergeTreeCustom(f.p, s.p, \m, a, b -> a + b));
+}
+
+polySub(f : Polynom, s : Polynom) -> Polynom {
+    polySum(f, minusPoly(s));
+}
+
+polyProd(f : Polynom, s : Polynom) -> Polynom {
+    Polynom(foldTree(f.p, makeTree(), \lk, lv, acc -> {
+        foldTree(s.p, acc, \rk, rv, ac -> {
+            mp = monProd(lk, rk);
+            switch(lookupTree(ac, monProd(lk, rk))) {
+                Some(coef) : setTree(ac, mp, coef + (lv * rv));
+                None() : setTree(ac, mp, lv * rv);
+            }
+        });
+    }));
+}
+
+Ar2Frac(a : ArExp) -> Frac {
+    switch(a) {
+        ArOp(op, left, right, c) : {
+            l = Ar2Frac(left);
+            r = Ar2Frac(right);
+            if (c == "+") {
+                Frac(
+                    polySum(polyProd(l.top, r.bot), polyProd(l.bot, r.top)),
+                    polyProd(l.bot, r.bot)
+                );
+            } else if (c == "-") {
+                Frac(
+                    polySub(polyProd(l.top, r.bot), polyProd(l.bot, r.top)),
+                    polyProd(l.bot, r.bot)
+                );
+            } else if (c == "*") {
+                Frac(
+                    polyProd(l.top, r.top),
+                    polyProd(l.bot, r.bot)
+                )
+            } else {
+                Frac(
+                    polyProd(l.top, r.bot),
+                    polyProd(l.bot, r.top)
+                )
+            }
+        };
+        ArInt(val) : Frac(Polynom(setTree(makeTree(), Monom(setTree(makeTree(), "", 0)), val)),
+                        Polynom(setTree(makeTree(), Monom(setTree(makeTree(), "", 0)), 1)));
+        ArVar(var) : Frac(Polynom(setTree(makeTree(), Monom(setTree(makeTree(), var, 1)), 1)),
+                        Polynom(setTree(makeTree(), Monom(setTree(makeTree(), "", 0)), 1)));
+    }
+}
+
+Monom2s(m : Monom) -> string {
+    foldTree(m.m, "", \k, v, acc -> {
+        if (v == 0) {
+            acc;
+        } else if (v == 1) {
+            acc + k;
+        } else if (v > 0) {
+            acc + k + "^" + i2s(v);
+        } else {
+            acc + k + "^(" + i2s(v) + ")";
+        }
+    });
+}
+
+// Most of this function is cosmetic stuff
+Polynom2s(p : Polynom) -> string {
+    arr = foldTree(p.p, [], \k, v, acc -> {
+        if (v == 0) {
+            acc;
+        } else {
+            monom = Monom2s(k);
+            if (monom != "") {
+                if (v > 0) {
+                    if (v == 1) {
+                        arrayPush(acc, monom);
+                    } else {
+                        arrayPush(acc, i2s(v) + monom);
+                    }
+                } else {
+                    if (v == -1) {
+                        arrayPush(acc, "(-" + monom + ")")
+                    } else {
+                        arrayPush(acc, "(" + i2s(v) + monom + ")");
+                    }
+                }
+            } else {
+                if (v > 0) {
+                    arrayPush(acc, i2s(v));
+                } else {
+                    arrayPush(acc, "(" + i2s(v) + ")");
+                }
+            }
+        }
+    });
+    foldi(arr, "", \i, acc, s -> {
+        if (i != 0) {
+            acc + " + " + s;
+        } else {
+            acc + s;
+        }
+    });
+}
+
+Frac2s(f : Frac) -> string {
+    Polynom2s(f.top) + "\n-------------------------     <- it's fraction sign\n" + Polynom2s(f.bot);
+}
+
 main() {
-    expr = "(((2 * x) + 2) / y)";
+    expr = "((((2 + (a / 3)) * (x - 5)) + 2) / (y - (x + 3)))";
+         // simplify by hand
+         // ((((2 + (a / 3)) * (x - 5)) + 2) / (y - (x + 3)))
+         // ((6 + a) / 3 * (x - 5) + 2) / (y - x - 3)
+         // ((6 + a) * (x - 5) + 6) / (3y - 3x - 9)
+         // (6x + ax - 30 - 5a + 6) / (3y - 3x - 9)
+         // answer is 
+         // (ax + 6x - 5a - 24) / (3y - 3x - 9)
     a = parse(expr);
     switch(a : Maybe<ArExp>) {
         None() : println("parse error");
         Some(arExp) : {
-            der : ArExp = deriv(arExp, "x");
-            println(ar2s(der));
+            println("General form of expression:");
+            frac : Frac = Ar2Frac(arExp);
+            println(Frac2s(frac));
         };
     }
+}
 
     // from exp.lingo (boolsheet)
     // assignment = " "* letter+ $w " "*"="" "* exp:val " "*";" {assign($w, :val)};
@@ -175,9 +308,10 @@ main() {
     //         println(rpn2ar(rpn));
     //     }
     // };
-}
 
-// graveyard
+//
+// GRAVEYARD
+//
 
 // ar2rpn(a : ArExp) -> [RpnEl] {
 //     switch(a) {
