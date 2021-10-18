@@ -130,7 +130,14 @@ rpn2s(a : [RpnEl]) -> string {
 }
 
 main() {
-    expr = "( y * (x + ( ( seven * 2 ) - 5 ) ) )";
+    expr = "((((2 + (a / 3)) * (x - 5)) + 2) / (y - (x + 3)))";
+         // simplify by hand
+         // ((((2 + (a / 3)) * (x - 5)) + 2) / (y - (x + 3)))
+         // ((6 + a) / 3 * (x - 5) + 2) / (y - x - 3)
+         // ((6 + a) * (x - 5) + 6) / (3y - 3x - 9)
+         // (6x + ax - 30 - 5a + 6) / (3y - 3x - 9)
+         // answer is
+         // (ax + 6x - 5a - 24) / (3y - 3x - 9)
     a = parse(expr);
     switch(a : Maybe<ArExp>) {
         None() : println("Parsing error (runtime)");
