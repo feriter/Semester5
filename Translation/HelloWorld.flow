@@ -10,26 +10,26 @@ subF(a : int, b : int) -> int { a - b; }
 prodF(a : int, b : int) -> int { a * b; }
 divF(a : int, b : int) -> int { a / b; }
 
-ArExp ::= ArOp, ArInt;
+Polynom : (p : Tree<Monom, int>);
+Monom : (m : Tree<string, int>);
+Frac : (top : Polynom, bot : Polynom);
+
+ArExp ::= ArOp, ArInt, ArVar;
 ArOp : (op : (int, int) -> int, l : ArExp, r : ArExp, c : string);
 ArInt : (val : int);
+ArVar : (word : string);
 
 RpnEl ::= RpnOp, RpnVal;
 RpnVal : (val : int);
 RpnOp : (op : (int, int) -> int, c : string);
 
-// there is no such structure 'map' in flow, so i used tree instead
-variables : Tree<string, [int]> = pairs2tree([
-    Pair("x", [2]), // x = 2
-    Pair("y", [4]), // y = 4
-    Pair("seven", [7]) // guess what
-]);
+variables : ref Tree<string, [int]> = ref TreeEmpty();
 
 parse(str : string) -> Maybe<ArExp> {
     gram = "#include exp.lingo";
     parser = compilePegGrammar(gram);
     result = parsic3(parser, str, 
-        SemanticActions(mergeTree(defaultPegActions.t, 
+        SemanticActions(mergeTree(defaultPegActions.t,
             pairs2tree([
                 Pair("sumOp", \s -> 
                     ArOp(sumF, s[0], s[1], "+")
@@ -44,8 +44,12 @@ parse(str : string) -> Maybe<ArExp> {
                     ArOp(divF, s[0], s[1], "/")
                 ),
                 Pair("variable", \s ->
-                    ArInt(getTreeArrayValue(variables, s[0])[0])
-                )
+                    ArVar(s[0])
+                ),
+                Pair("assign", \s -> {
+                    variables := mergeTree(^variables, makeTree1(s[0], [ar2i(s[1])]));
+                    ArInt(ar2i(s[1]));
+                })
             ])
         )), 
         ArInt(0)
@@ -57,6 +61,7 @@ ar2i(a : ArExp) -> int {
     switch(a) {
         ArOp(func, first, second, c) : func(ar2i(first), ar2i(second));
         ArInt(value) : value;
+        ArVar(word) : lastElement(getTreeArrayValue(^variables, word), 0);
     }
 }
 
@@ -64,69 +69,186 @@ ar2s(a : ArExp) -> string {
     switch(a) {
         ArOp(func, first, second, c) : "(" + ar2s(first) + c + ar2s(second) + ")";
         ArInt(value) : i2s(value);
+        ArVar(word) : word;
     }
 }
 
-ar2rpn(a : ArExp) -> [RpnEl] {
+deriv(a : ArExp, var : string) -> ArExp {
+    result : ref ArExp = ref ArInt(0);
     switch(a) {
-        ArOp(func, first, second, c) : concat(ar2rpn(first), concat(ar2rpn(second), [RpnOp(func, c)]));
-        ArInt(value) : [RpnVal(value)];
-    }
-}
-
-rpn2i(a : [RpnEl]) -> Maybe<int> {
-    stack : ref [int] = ref [];
-    iteri(a, \i, elem -> {
-        switch(elem) {
-            RpnVal(val) : refArrayPush(stack, val);
-            RpnOp(op, c) : {
-                fir : int = lastElement(^stack, 0);
-                stack := removeLastElement(^stack);
-                sec : int = lastElement(^stack, 0);
-                stack := removeLastElement(^stack);
-                refArrayPush(stack, op(sec, fir));
-            };
-        }
-    });
-    if (length(^stack) == 0) {
-        None();
-    } else {
-        Some(^stack[0]);
-    }
-}
-
-rpn2ar(r : [RpnEl]) -> ArExp {
-    stack : ref [ArExp] = ref [];
-    iteri(r, \i, elem -> {
-        switch(elem) {
-            RpnOp(op, c): {
-                fir : ArExp = lastElement(^stack, ArInt(0));
-                stack := removeLastElement(^stack);
-                sec : ArExp = lastElement(^stack, ArInt(0));
-                stack := removeLastElement(^stack);
-                refArrayPush(stack, ArOp(op, sec, fir, c));
-            };
-            RpnVal(val): refArrayPush(stack, ArInt(val));
+        ArOp(op, l, r, c) : {
+            if (c == "+") {
+                result := ArOp(op, deriv(l, var), deriv(r, var), c);
+            } else if (c == "-") {
+                result := ArOp(op, deriv(l, var), deriv(r, var), c);
+            } else if (c == "*") {
+                result := ArOp(sumF, ArOp(prodF, deriv(l, var), r, "*"), ArOp(prodF, l, deriv(r, var), "*"), "+");
+            } else {
+                result := ArOp(divF, 
+                ArOp(subF, ArOp(prodF, deriv(l, var), r, "*"), ArOp(prodF, l, deriv(r, var), "*"), "-"), 
+                ArOp(prodF, r, r, "*"), "/");
+            }
         };
-    });
-    ^stack[0];
+        ArInt(val) : result := ArInt(0);
+        ArVar(word) : {
+            if (word == var) {
+                result := ArInt(1);
+            } else {
+                result := ArInt(0);
+            }
+        };
+    }
+    simplify(^result);
 }
 
-getChar(r : RpnEl) -> string {
-    switch(r) {
-        RpnVal(val) : i2s(val);
-        RpnOp(op, c) : c;
+// This function is not needed for counting with polynoms
+simplify(a : ArExp) -> ArExp {
+    switch(a : ArExp) {
+        ArOp(op, l, r, c) : {
+            ll = simplify(l);
+            rr = simplify(r);
+            if (c == "+" || c == "-") {
+                if (ll == ArInt(0)) {
+                    rr;
+                } else if (rr == ArInt(0)) {
+                    ll;
+                } else {
+                    ArOp(op, ll, rr, c);
+                }
+            } else {
+                if (ll == ArInt(1)) {
+                    rr;
+                } else if (rr == ArInt(1)) {
+                    ll;
+                } else if (ll == ArInt(0) || rr == ArInt(0)) {
+                    ArInt(0);
+                } else {
+                    ArOp(op, ll, rr, c);
+                }
+            }
+        };
+        ArInt(val) : a;
+        ArVar(word) : a;
     }
 }
 
-rpn2s(a : [RpnEl]) -> string {
-    result : string = fold(a, "", \result, element -> {
-        switch(element) {
-            RpnVal(value) : result + i2s(value) + " ";
-            RpnOp(op, c) : result + c + " ";
+minusPoly(p : Polynom) -> Polynom {
+    Polynom(mapTree(p.p, \c -> -c));
+}
+
+monProd(f : Monom, s : Monom) -> Monom {
+    Monom(mergeTreeCustom(f.m, s.m, \var, a, b -> a + b));
+}
+
+polySum(f : Polynom, s : Polynom) -> Polynom {
+    Polynom(mergeTreeCustom(f.p, s.p, \m, a, b -> a + b));
+}
+
+polySub(f : Polynom, s : Polynom) -> Polynom {
+    polySum(f, minusPoly(s));
+}
+
+polyProd(f : Polynom, s : Polynom) -> Polynom {
+    Polynom(foldTree(f.p, makeTree(), \lk, lv, acc -> {
+        foldTree(s.p, acc, \rk, rv, ac -> {
+            mp = monProd(lk, rk);
+            switch(lookupTree(ac, monProd(lk, rk))) {
+                Some(coef) : setTree(ac, mp, coef + (lv * rv));
+                None() : setTree(ac, mp, lv * rv);
+            }
+        });
+    }));
+}
+
+Ar2Frac(a : ArExp) -> Frac {
+    switch(a) {
+        ArOp(op, left, right, c) : {
+            l = Ar2Frac(left);
+            r = Ar2Frac(right);
+            if (c == "+") {
+                Frac(
+                    polySum(polyProd(l.top, r.bot), polyProd(l.bot, r.top)),
+                    polyProd(l.bot, r.bot)
+                );
+            } else if (c == "-") {
+                Frac(
+                    polySub(polyProd(l.top, r.bot), polyProd(l.bot, r.top)),
+                    polyProd(l.bot, r.bot)
+                );
+            } else if (c == "*") {
+                Frac(
+                    polyProd(l.top, r.top),
+                    polyProd(l.bot, r.bot)
+                )
+            } else {
+                Frac(
+                    polyProd(l.top, r.bot),
+                    polyProd(l.bot, r.top)
+                )
+            }
+        };
+        ArInt(val) : Frac(Polynom(setTree(makeTree(), Monom(setTree(makeTree(), "", 0)), val)),
+                        Polynom(setTree(makeTree(), Monom(setTree(makeTree(), "", 0)), 1)));
+        ArVar(var) : Frac(Polynom(setTree(makeTree(), Monom(setTree(makeTree(), var, 1)), 1)),
+                        Polynom(setTree(makeTree(), Monom(setTree(makeTree(), "", 0)), 1)));
+    }
+}
+
+Monom2s(m : Monom) -> string {
+    foldTree(m.m, "", \k, v, acc -> {
+        if (v == 0) {
+            acc;
+        } else if (v == 1) {
+            acc + k;
+        } else if (v > 0) {
+            acc + k + "^" + i2s(v);
+        } else {
+            acc + k + "^(" + i2s(v) + ")";
         }
     });
-    result;
+}
+
+// Most of this function is cosmetic stuff
+Polynom2s(p : Polynom) -> string {
+    arr = foldTree(p.p, [], \k, v, acc -> {
+        if (v == 0) {
+            acc;
+        } else {
+            monom = Monom2s(k);
+            if (monom != "") {
+                if (v > 0) {
+                    if (v == 1) {
+                        arrayPush(acc, monom);
+                    } else {
+                        arrayPush(acc, i2s(v) + monom);
+                    }
+                } else {
+                    if (v == -1) {
+                        arrayPush(acc, "(-" + monom + ")")
+                    } else {
+                        arrayPush(acc, "(" + i2s(v) + monom + ")");
+                    }
+                }
+            } else {
+                if (v > 0) {
+                    arrayPush(acc, i2s(v));
+                } else {
+                    arrayPush(acc, "(" + i2s(v) + ")");
+                }
+            }
+        }
+    });
+    foldi(arr, "", \i, acc, s -> {
+        if (i != 0) {
+            acc + " + " + s;
+        } else {
+            acc + s;
+        }
+    });
+}
+
+Frac2s(f : Frac) -> string {
+    Polynom2s(f.top) + "\n-------------------------     <- it's fraction sign\n" + Polynom2s(f.bot);
 }
 
 main() {
@@ -140,20 +262,115 @@ main() {
          // (ax + 6x - 5a - 24) / (3y - 3x - 9)
     a = parse(expr);
     switch(a : Maybe<ArExp>) {
-        None() : println("Parsing error (runtime)");
+        None() : println("parse error");
         Some(arExp) : {
-            println("Arithmetical expression : " + expr);
-            print("Parsed into : ");
-            println(arExp);
-            rpn = ar2rpn(arExp);
-            rpnVal = rpn2i(rpn);
-            println("Reverse Polish notation : " + rpn2s(rpn));
-            switch(rpnVal) {
-                None() : println("Incorrect expression");
-                Some(val) : println("Its value : " + i2s(val));
-            }
-            print("Reverse Polish notation converted back to arithmetical expression : ");
-            println(rpn2ar(rpn));
-        }
-    };
+            println("General form of expression:");
+            frac : Frac = Ar2Frac(arExp);
+            println(Frac2s(frac));
+        };
+    }
 }
+
+    // from exp.lingo (boolsheet)
+    // assignment = " "* letter+ $w " "*"="" "* exp:val " "*";" {assign($w, :val)};
+
+    // code : [string] = [
+    //     "x = 2;",
+    //     "y = 4;",
+    //     "seven = 7;",
+    //     "five = 5;",
+    //     "result = (y * (x + ((seven * 2) - five)));"
+    // ];
+    // iter(code, \s -> {
+    //     a = parse(s);
+    //     switch(a : Maybe<ArExp>) {
+    //         None() : println("no return");
+    //         Some(arExp) : println(arExp);
+    //     }
+    // });
+    
+    // expr = "( 4 * (2 + ( ( 7 * 2 ) - 5 ) ) )";
+    // a = parse(expr);
+    // switch(a : Maybe<ArExp>) {
+    //     None() : println("Parsing error (runtime)");
+    //     Some(arExp) : {
+    //         println("Arithmetical expression : " + expr);
+    //         print("Parsed into : ");
+    //         println(arExp);
+    //         rpn = ar2rpn(arExp);
+    //         rpnVal = rpn2i(rpn);
+    //         println("Reverse Polish notation : " + rpn2s(rpn));
+    //         switch(rpnVal) {
+    //             None() : println("Incorrect expression");
+    //             Some(val) : println("Its value : " + i2s(val));
+    //         }
+    //         print("Reverse Polish notation converted back to arithmetical expression : ");
+    //         println(rpn2ar(rpn));
+    //     }
+    // };
+
+//
+// GRAVEYARD
+//
+
+// ar2rpn(a : ArExp) -> [RpnEl] {
+//     switch(a) {
+//         ArOp(func, first, second, c) : concat(ar2rpn(first), concat(ar2rpn(second), [RpnOp(func, c)]));
+//         ArInt(value) : [RpnVal(value)];
+//     }
+// }
+
+// rpn2i(a : [RpnEl]) -> Maybe<int> {
+//     stack : ref [int] = ref [];
+//     iteri(a, \i, elem -> {
+//         switch(elem) {
+//             RpnVal(val) : refArrayPush(stack, val);
+//             RpnOp(op, c) : {
+//                 fir : int = lastElement(^stack, 0);
+//                 stack := removeLastElement(^stack);
+//                 sec : int = lastElement(^stack, 0);
+//                 stack := removeLastElement(^stack);
+//                 refArrayPush(stack, op(sec, fir));
+//             };
+//         }
+//     });
+//     if (length(^stack) == 0) {
+//         None();
+//     } else {
+//         Some(^stack[0]);
+//     }
+// }
+
+// rpn2ar(r : [RpnEl]) -> ArExp {
+//     stack : ref [ArExp] = ref [];
+//     iteri(r, \i, elem -> {
+//         switch(elem) {
+//             RpnOp(op, c): {
+//                 fir : ArExp = lastElement(^stack, ArInt(0));
+//                 stack := removeLastElement(^stack);
+//                 sec : ArExp = lastElement(^stack, ArInt(0));
+//                 stack := removeLastElement(^stack);
+//                 refArrayPush(stack, ArOp(op, sec, fir, c));
+//             };
+//             RpnVal(val): refArrayPush(stack, ArInt(val));
+//         };
+//     });
+//     ^stack[0];
+// }
+
+// getChar(r : RpnEl) -> string {
+//     switch(r) {
+//         RpnVal(val) : i2s(val);
+//         RpnOp(op, c) : c;
+//     }
+// }
+
+// rpn2s(a : [RpnEl]) -> string {
+//     result : string = fold(a, "", \result, element -> {
+//         switch(element) {
+//             RpnVal(value) : result + i2s(value) + " ";
+//             RpnOp(op, c) : result + c + " ";
+//         }
+//     });
+//     result;
+// }
