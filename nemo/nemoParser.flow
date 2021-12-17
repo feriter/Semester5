@@ -1,0 +1,81 @@
+import lingo/pegcode/driver;
+
+export {
+    NeType ::= NeInt, NeArray;
+    NeInt();
+    NeArray(type : NeType);
+
+    NeDesc(name : string, type : NeType);
+
+    NeExp ::= NeOperand, NeArExp, NeFunExp;
+    NeOperand ::= NeVar, NeConst;
+    NeVar(str : string);
+    NeConst(value : int);
+    NeArExp(l : NeExp, r : NeExp, op : string);
+    NeFunExp ::= NeApp, NeUpd;
+    NeApp(arr : NeExp, i : NeExp);
+    NeUpd(arr : NeExp, i : NeExp, val : NeExp);
+
+    NeRel(l : NeExp, r : NeExp, s : string);
+
+    NeBody ::= NeAssign, NeIf, NeWhile, NeSeq, NePrint;
+    NeAssign(v : NeVar, val : NeExp);
+    NeIf(cond : NeRel, body : NeBody);
+    NeWhile(cond : NeRel, body : NeBody);
+    NeSeq(ops : [NeBody]);
+    NePrint(e : NeExp);
+
+    NeProg(desc : [NeDesc], body : NeBody);
+
+    str2NeProg(s : string) -> Maybe<NeProg>;
+    neExp2str(e : NeExp) -> string;   
+}
+
+str2NeProg(s : string) -> Maybe<NeProg> {
+    gram = "#include nemo.lingo";
+    result = parsic3(compilePegGrammar(gram), s, defaultPegActions, NeProg([NeDesc("x", NeInt())], NeAssign(NeVar("x"), NeConst(0))));
+    if (result.third == "") {
+        Some(result.first);
+    } else {
+        None();
+    }
+}
+
+neType2str(t : NeType) -> string {
+    switch(t) {
+        NeInt(): "int";
+        NeArray(inner): "[" + neType2str(inner) + "]";
+    }
+}
+
+neExp2str(e : NeExp) -> string {
+    switch(e) {
+        NeVar(name): name;
+        NeConst(val): i2s(val);
+        NeArExp(l, r, op): "(" + neExp2str(l) + " " + op + " " + neExp2str(r) + ")";
+        NeApp(arr, i): "app(" + neExp2str(arr) + ", " + neExp2str(i) + ")";
+        NeUpd(arr, i, val): "upd(" + neExp2str(arr) + ", " + neExp2str(i) + ", " + neExp2str(val) + ")";
+    }
+}
+
+neRel2str(r : NeRel) -> string {
+    neExp2str(r.l) + " " + r.s + " " + neExp2str(r.r);
+}
+
+neBody2str(b : NeBody) -> string {
+    switch(b) {
+        NeAssign(var, val): neExp2str(var) + " = " + neExp2str(val) + "\n";
+        NeIf(cond, body): "if(" + neRel2str(cond) + ") {\n" + neBody2str(body) + "\n}\n";
+        NeWhile(cond, body): "while(" + neRel2str(cond) + ") {\n" + neBody2str(body) + "\n}\n";
+        NePrint(e): "print(" + neExp2str(e) + ")";
+        NeSeq(bodies): "{\n" + fold(bodies, "", \acc, s -> {
+            acc + neBody2str(s);
+        }) + "}\n";
+    }
+}
+
+neProg2str(p : NeProg) -> string {
+    fold(p.desc, "", \acc, v -> {
+        acc + "var " + v.name + ": " + neType2str(v.type) + "\n";
+    }) + neBody2str(p.body);
+}

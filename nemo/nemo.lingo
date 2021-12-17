@@ -1,0 +1,32 @@
+prog = ws desc*:d ws body:o ws {NeProg(:d, :o)};
+
+desc = ws "var" ws letters$l ws ":" ws type:t ws ";" ws {NeDesc($l, :t)};
+
+type  = int | array;
+int = ws "int" ws {NeInt()};
+array = ws "[" type:t "]" ws {NeArray(:t)};
+
+body = seq | print | assign | if | while;
+assign = ws variable:v ws "=" ws expr:e ws ";" ws {NeAssign(:v, :e)};
+print = ws "print" ws "(" expr:e ")" ws ";" ws {NePrint(:e)};
+
+if = ws "if(" ws rel:r ws ")" ws body:b ws {NeIf(:r, :b)};
+while = ws "while(" rel:r ")" ws body:b ws {NeWhile(:r, :b)};
+seq = ws "{" body+:b ws "}" ws {NeSeq(:b)};
+
+expr =  funexp | arexp | operand;
+operand = const | variable;
+const = ws digits$d ws {NeConst(s2i($d))};
+variable = ws letters$l ws {NeVar($l)};
+arexp = ws "(" expr:l ws arsign$s ws expr:r ")" ws {NeArExp(:l, :r, $s)};
+funexp = app | upd;
+app = ws "app(" expr:f "," ws expr:s ")" ws {NeApp(:f, :s)};
+upd = ws "upd(" expr:f "," ws expr:s "," ws expr:t ")" ws {NeUpd(:f, :s, :t)};
+arsign = "+" | "-" | "*" | "/";
+
+rel = ws expr:l ws relsign$s ws expr:r ws {NeRel(:l, :r, $s)};
+relsign = "==" | "!=" | ">" | "<" | ">=" | "<=";
+
+digits = ('0'-'9')+;
+letters = ('a'-'z'| 'A'-'Z')+;
+ws = (' ' | '\t' | '\n' | '\r')*;

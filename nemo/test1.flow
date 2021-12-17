@@ -1,0 +1,58 @@
+import nemoVM;
+
+parseAndExec(s : string) -> void {
+    prog = str2NeProg(s);
+    switch(prog) {
+        Some(neProg): {
+            exec(neProg);
+        };
+        None(): println("incorrect program");
+    }
+}
+
+main() {
+    // program that counts fibonacci number 10 using only int variables
+    nemoTest1 ="
+    var f : int;
+    var s : int;
+    var number : int;
+    var i : int;
+    var t : int;
+    {
+        number = 10;
+        f = 1;
+        s = 1;
+        i = 2;
+        while(i < number) {
+            t = (f + s);
+            f = s;
+            s = t;
+            i = (i + 1);
+        }
+        print(s);
+    }
+    ";
+    parseAndExec(nemoTest1);
+
+    // program that counts fibonacci number 10 using arrays
+    nemoTest2 = "
+    var numbers : [int];
+    var i : int;
+    var number : int;
+    {
+        number = 10;
+        i = 2;
+        numbers = upd(numbers, 0, 1);
+        numbers = upd(numbers, 1, 1);
+
+        while(i < number) {
+            numbers = upd(numbers, i, (app(numbers, (i - 1)) + app(numbers, (i - 2))));
+            i = (i + 1);
+        }
+        print(app(numbers, (number - 1)));
+    }
+    ";
+    parseAndExec(nemoTest2);
+    
+    quit(0);
+}

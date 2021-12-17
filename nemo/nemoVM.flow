@@ -1,0 +1,233 @@
+import nemoParser;
+import sys/system;
+
+export {
+    Value ::= IntValue, ArrayValue;
+    IntValue(val : int);
+    ArrayValue(val : [Value]);
+
+    exec(p : NeProg) -> void;
+}
+
+typeCheck(l : Value, r : Value) -> bool {
+    switch(l) {
+        IntValue(int1):
+        switch(r) {
+            IntValue(int2): true;
+            ArrayValue(arr): false;
+        }
+        ArrayValue(inner1):
+        switch(r) {
+            IntValue(val): false;
+            ArrayValue(inner2): {
+                if (length(inner1) == 0 && length(inner2) > 0) {
+                    typeCheck(IntValue(0), inner2[0])
+                } else if (length(inner2) == 0 && length(inner1) > 0) {
+                    typeCheck(IntValue(0), inner1[0])
+                } else if (length(inner1) == 0 && length(inner2) == 0) {
+                    true;
+                } else {
+                    typeCheck(inner1[0], inner2[0]);
+                }
+            }
+        }
+    }
+}
+
+calcArExp(l : Value, r : Value, op : string) -> Maybe<int> {
+    switch(l) {
+        ArrayValue(linner) : None();
+        IntValue(left):
+        switch(r) {
+            ArrayValue(rinner) : None();
+            IntValue(right): {
+                if (op == "+") Some(left + right)
+                else if (op == "-") Some(left - right)
+                else if (op == "*") Some(left * right)
+                else if (op == "/") Some(left / right)
+                else None()
+            }
+        }
+    }
+}
+
+calcExpValue(e : NeExp, vars : Tree<string, Value>) -> Maybe<Value> {
+    switch(e) {
+        NeVar(name): lookupTree(vars, name);
+        NeConst(val): Some(IntValue(val));
+        NeArExp(l, r, op): {
+            ret: Maybe<Value> = {
+                ll = calcExpValue(l, vars);
+                rr = calcExpValue(r, vars);
+                switch(ll) {
+                    None(): None();
+                    Some(llval):
+                    switch(rr) {
+                        None(): None();
+                        Some(rrval):
+                        switch(calcArExp(llval, rrval, op)) {
+                            None(): None();
+                            Some(res): Some(IntValue(res));
+                        }
+                    }
+                }
+            }
+            ret;
+        };
+        NeApp(a, i): {
+            switch(calcExpValue(a, vars)) {
+                None(): None();
+                Some(v):
+                switch(v) {
+                    IntValue(val): None();
+                    ArrayValue(arr):
+                    switch(calcExpValue(i, vars)) {
+                        None(): None();
+                        Some(value):
+                        switch(value) {
+                            ArrayValue(arrr): None();
+                            IntValue(index): {
+                                if (index < length(arr)) {
+                                    Some(arr[index])
+                                } else {
+                                    None()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        NeUpd(a, i, v): {
+            switch(calcExpValue(a, vars)) {
+                None(): None();
+                Some(val1):
+                switch(val1) {
+                    IntValue(intvalue): None();
+                    ArrayValue(arr):
+                    switch(calcExpValue(i, vars)) {
+                        None(): None();
+                        Some(val2):
+                        switch(val2) {
+                            ArrayValue(arrr): None();
+                            IntValue(index):
+                            switch(calcExpValue(v, vars)) {
+                                None(): None();
+                                Some(val3):
+                                if (typeCheck(val1, ArrayValue([val3]))) {
+                                    if (index < length(arr)) {
+                                        Some(ArrayValue(replace(arr, index, val3)))
+                                    } else if (index == length(arr)) {
+                                        Some(ArrayValue(concat(arr, [val3])));
+                                    } else {
+                                        None()
+                                    }
+                                } else {
+                                    None();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+calcCondValue(rel : NeRel, vars : Tree<string, Value>) -> Maybe<bool> {
+    left = calcExpValue(rel.l, vars);
+    right = calcExpValue(rel.r, vars);
+    switch(left) {
+        None(): None();
+        Some(ll): 
+        switch(right) {
+            None(): None();
+            Some(rr): {
+                if (rel.s == "==") Some(rr == ll)
+                else if (rel.s == "!=") Some(ll != rr)
+                else if (rel.s == "<") Some(ll < rr)
+                else if (rel.s == ">") Some(ll > rr)
+                else if (rel.s == "<=") Some(ll <= rr)
+                else if (rel.s == ">=") Some(ll >= rr)
+                else None()
+            }
+        }
+    }
+}
+
+printValue(v : Value) -> void {
+    switch(v) {
+        IntValue(val): println(i2s(val));
+        ArrayValue(vals): {
+            iter(vals, \it -> printValue(it));
+        }
+    }
+}
+
+execBody(b : NeBody, vars : Tree<string, Value>) -> Maybe<Tree<string, Value>> {
+    switch(b) {
+        NePrint(e): {
+            res = calcExpValue(e, vars);
+            switch(res) {
+                None(): Some(vars);
+                Some(val): {
+                    printValue(val);
+                    Some(vars)
+                }
+            }
+        }
+        NeAssign(v, val): 
+        switch(calcExpValue(val, vars)) {
+            None(): None()
+            Some(newValue): {
+                Some(setTree(vars, v.str, newValue));
+            }
+        }
+        NeIf(cond, body):
+        switch(calcCondValue(cond, vars)) {
+            None(): None()
+            Some(c):
+            if (c) execBody(body, vars)
+            else Some(vars);
+        }
+        NeWhile(cond, body): {
+            switch(calcCondValue(cond, vars)) {
+                None(): None()
+                Some(c):
+                if (c) {
+                    switch(body) {
+                        NeAssign(var, val):         execBody(NeSeq([NeAssign(var, val), NeWhile(cond, body)]), vars)
+                        NePrint(e):                 execBody(NeSeq([NePrint(e), NeWhile(cond, body)]), vars)
+                        NeIf(ifcond, ifbody):       execBody(NeSeq([NeIf(ifcond, ifbody), NeWhile(cond, body)]), vars)
+                        NeWhile(whcond, whbody):    execBody(NeSeq([NeWhile(whcond, whbody), NeWhile(cond, body)]), vars)
+                        NeSeq(bodies):              execBody(NeSeq(concat(bodies, [NeWhile(cond, body)])), vars)
+                    }
+                } else {
+                    execBody(NeIf(cond,body), vars)
+                }
+            }
+        }
+        NeSeq(bodies): {
+            Some(fold(bodies, vars, \acc, body -> {
+                switch(execBody(body, acc)) {
+                    None(): acc
+                    Some(varsTree): mergeTreeCustom(acc, varsTree, \key, val1, val2 -> val1)
+                }
+            }))
+        }
+    }
+}
+
+initVars(p : NeProg) -> Tree<string, Value> {
+    fold(p.desc, makeTree(), \variables, d -> {
+        switch(d.type) {
+            NeInt(): setTree(variables, d.name, IntValue(0));
+            NeArray(t): setTree(variables, d.name, ArrayValue([]));
+        }
+    })
+}
+
+exec(p : NeProg) -> void {
+    variables : Tree<string, Value> = initVars(p);
+    endVars = execBody(p.body, variables);
+}
