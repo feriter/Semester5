@@ -1,0 +1,153 @@
+import nemoParser;
+
+export {
+    VneType ::= VneInt, VneArray;
+    VneInt();
+    VneArray(type : VneType);
+    VneLabel(val : int);
+
+    VneExp ::= VneOperand, VneArExp, VneFunExp;
+    VneOperand ::= VneVar, VneConst;
+    VneVar(str : string);
+    VneConst(value : int);
+    VneArExp(l : VneExp, r : VneExp, op : string);
+    VneFunExp ::= VneApp, VneUpd;
+    VneApp(arr : VneExp, i : VneExp);
+    VneUpd(arr : VneExp, i : VneExp, val : VneExp);
+
+    VneRel(l : VneExp, r : VneExp, s : string);
+
+    VneOperator ::= VneAssign, VnePrint, VneIfElse;
+    VneAssign(mark : int, var : VneVar, val : VneExp, marks : [VneLabel]);
+    VnePrint(mark : int, e : VneExp, marks : [VneLabel]);
+    VneIfElse(mark : int, cond: VneRel, then : [VneLabel], else: [VneLabel]);
+
+    VneDesc(name : string, type : VneType);
+
+    VneProg(desc : [VneDesc], body : [VneOperator]);
+    
+    neProg2VneProg(prog :NeProg) -> VneProg;
+}
+
+operMaxLabel(oper: VneOperator) -> int {
+    switch(oper) {
+        VneIfElse(lab, cond, ll, lr):
+            max(lab, 
+                max(if(length(ll) == 0) { 0 }
+                    else { fold(ll, ll[0].val, \ acc, v -> max(acc, v.val)) },
+                    if(length(lr) == 0) { 0 }
+                    else { fold(lr, lr[0].val, \ acc, v -> max(acc, v.val)) }));
+        VnePrint(lab, e, labels):
+            max(lab, 
+                if(length(labels) == 0) { 0 }
+                else { fold(labels, labels[0].val, \ acc, v -> max(acc, v.val)) });
+        VneAssign(lab, var, val, labels):
+            max(lab, 
+                if(length(labels) == 0) { 0 }
+                else { fold(labels, labels[0].val, \ acc, v -> max(acc, v.val)) });
+    }
+}
+
+maxLabel(opers: [VneOperator]) -> int {
+    fold(opers, 0, \ acc, v -> max(acc, operMaxLabel(v)))
+}
+
+operShiftLabels(oper: VneOperator, n: int) -> VneOperator {
+    switch(oper) {
+        VneIfElse(lab, cond, ll, lr): 
+            VneIfElse(lab + n, 
+                        cond, 
+                        if(length(ll) == 0) { ll }
+                        else { map(ll, \ v -> VneLabel(v.val + n)) },
+                        if(length(lr) == 0) { lr }
+                        else { map(lr, \ v -> VneLabel(v.val + n)) });
+        VnePrint(lab, e, labels):
+            VnePrint(lab + n, 
+                        e, 
+                        if(length(labels) == 0) { labels }
+                        else { map(labels, \ v -> VneLabel(v.val + n)) });
+        VneAssign(lab, var, val, labels): 
+            VneAssign(lab + n, 
+                        var, 
+                        val, 
+                        if(length(labels) == 0) { labels }
+                        else { map(labels, \ v -> VneLabel(v.val + n)) });
+    }
+}
+
+shiftLabels(opers: [VneOperator], n: int) -> [VneOperator] {
+    map(opers, \ o -> operShiftLabels(o, n))
+}
+
+operChangeLabels(oper: VneOperator, n: int, l: int) -> VneOperator {
+    switch(oper) {
+        VneIfElse(lab, cond, ll, lr):
+            VneIfElse(if(lab == l) n else lab, 
+                        cond,
+                        if(length(ll) == 0) { ll }
+                        else { map(ll, \ v -> VneLabel(if(v.val == l) n else v.val)) },
+                        if(length(lr) == 0) { lr }
+                        else { map(lr, \ v -> VneLabel(if(v.val == l) n else v.val)) });
+        VnePrint(lab, e, labels):
+            VnePrint(if(lab == l) n else lab, 
+                        e,
+                        if(length(labels) == 0) { labels }
+                        else { map(labels, \ v -> VneLabel(if(v.val == l) n else v.val)) });
+        VneAssign(lab, var, val, labels): 
+            VneAssign(if(lab == l) n else lab, 
+                        var, 
+                        val,
+                        if(length(labels) == 0) { labels }
+                        else { map(labels, \ v -> VneLabel(if(v.val == l) n else v.val)) });
+    }
+}
+
+changeLabels(opers: [VneOperator], n: int, l: int) -> [VneOperator] {
+    map(opers, \ o -> operChangeLabels(o, n, l))
+}
+
+neType2VneType(type: NeType) -> VneType {
+    switch(type) {
+        NeInt(): VneInt();
+        NeArray(t): VneArray(neType2VneType(t));
+    }
+}
+
+neExp2VneExp(e: NeExp) -> VneExp {
+    switch(e) {
+        NeArExp(le, re, op): VneArExp(neExp2VneExp(le), neExp2VneExp(re), op);
+        NeApp(arr, idx): VneApp(neExp2VneExp(arr), neExp2VneExp(idx));
+        NeUpd(arr, idx, val): VneUpd(neExp2VneExp(arr), neExp2VneExp(idx), neExp2VneExp(val));
+        NeConst(val): VneConst(val);
+        NeVar(name): VneVar(name);
+    }
+}
+
+neRel2VneRel(r : NeRel) -> VneRel {
+    VneRel(neExp2VneExp(r.l), neExp2VneExp(r.r), r.s);
+}
+
+neOperators2VneOperators(oper: NeBody) -> [VneOperator] {
+    switch(oper) {
+        NeAssign(var, val): [VneAssign(0, VneVar(var.str), neExp2VneExp(val), [VneLabel(1)])];
+        NeSeq(o): fold(tail(o), neOperators2VneOperators(o[0]), \acc, v -> {
+            concat(acc, shiftLabels(neOperators2VneOperators(v), maxLabel(acc)));
+        });
+        NeIf(cond, body): [VneIfElse(0, neRel2VneRel(cond), [VneLabel(1), VneLabel(maxLabel(shiftLabels(neOperators2VneOperators(body), 1)))], [])];
+        NeWhile(cond, body): {
+            newO = shiftLabels(neOperators2VneOperators(body), 1);
+            newOEnd = maxLabel(newO);
+            concat([VneIfElse(0, neRel2VneRel(cond), [VneLabel(1), VneLabel(newOEnd)], [])],
+                changeLabels(newO, 0, newOEnd));
+        }
+        NePrint(e): [VnePrint(0, neExp2VneExp(e), [VneLabel(1)])];
+    }
+}
+
+neDesc2VneDesc(decls: [NeDesc]) -> [VneDesc] {
+    map(decls, \ v -> VneDesc(v.name, neType2VneType(v.type)))
+}
+
+neProg2VneProg(prog :NeProg) -> VneProg {
+    VneProg(neDesc2VneDesc(prog.desc), neOperators2VneOperators(prog.body));
+}
