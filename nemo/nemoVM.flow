@@ -1,13 +1,17 @@
 import nemoParser;
 import sys/system;
+import translator;
+import ds/array;
+import ds/dlist;
 
 export {
-    Value ::= IntValue, ArrayValue;
-    IntValue(val : int);
-    ArrayValue(val : [Value]);
-
-    exec(p : NeProg) -> void;
+    exec(p : VneProg) -> DList<Node>;
 }
+
+Node(label: int, values: Tree<string, Value>);
+Value ::= IntValue, ArrayValue;
+IntValue(val : int);
+ArrayValue(val : [Value]);
 
 typeCheck(l : Value, r : Value) -> bool {
     switch(l) {
@@ -51,11 +55,11 @@ calcArExp(l : Value, r : Value, op : string) -> Maybe<int> {
     }
 }
 
-calcExpValue(e : NeExp, vars : Tree<string, Value>) -> Maybe<Value> {
+calcExpValue(e : VneExp, vars : Tree<string, Value>) -> Maybe<Value> {
     switch(e) {
-        NeVar(name): lookupTree(vars, name);
-        NeConst(val): Some(IntValue(val));
-        NeArExp(l, r, op): {
+        VneVar(name): lookupTree(vars, name);
+        VneConst(val): Some(IntValue(val));
+        VneArExp(l, r, op): {
             ret: Maybe<Value> = {
                 ll = calcExpValue(l, vars);
                 rr = calcExpValue(r, vars);
@@ -74,7 +78,7 @@ calcExpValue(e : NeExp, vars : Tree<string, Value>) -> Maybe<Value> {
             }
             ret;
         };
-        NeApp(a, i): {
+        VneApp(a, i): {
             switch(calcExpValue(a, vars)) {
                 None(): None();
                 Some(v):
@@ -98,7 +102,7 @@ calcExpValue(e : NeExp, vars : Tree<string, Value>) -> Maybe<Value> {
                 }
             }
         }
-        NeUpd(a, i, v): {
+        VneUpd(a, i, v): {
             switch(calcExpValue(a, vars)) {
                 None(): None();
                 Some(val1):
@@ -134,7 +138,7 @@ calcExpValue(e : NeExp, vars : Tree<string, Value>) -> Maybe<Value> {
     }
 }
 
-calcCondValue(rel : NeRel, vars : Tree<string, Value>) -> Maybe<bool> {
+calcCondValue(rel : VneRel, vars : Tree<string, Value>) -> Maybe<bool> {
     left = calcExpValue(rel.l, vars);
     right = calcExpValue(rel.r, vars);
     switch(left) {
@@ -155,6 +159,39 @@ calcCondValue(rel : NeRel, vars : Tree<string, Value>) -> Maybe<bool> {
     }
 }
 
+value2str(val : Value) -> string {
+    switch(val) {
+        IntValue(v): i2s(v);
+        ArrayValue(arr): "[" + fold(arr, "", \ s, v -> {s + " " + value2str(v)}) + "]";
+    }
+}
+
+printVneExp(e: VneExp, t: Tree<string, Value>) -> void {
+    switch(calcExpValue(e, t)) {
+        None(): println("Bad expression!");
+        Some(v): println(value2str(v));
+    }
+}
+
+getOperByLabel(label: int, prog: VneProg) -> Maybe<VneOperator> {
+    find(prog.body, \ oper -> {
+        switch(oper) {
+            VneIfElse(lab, cond, lm, rm): {
+                if(lab == label) true
+                else false
+            }
+            VnePrint(lab, e, labels): {
+                if(lab == label) true
+                else false
+            }
+            VneAssign(lab, var, val, labels): {
+                if(lab == label) true
+                else false
+            }
+        }
+    })
+}
+
 printValue(v : Value) -> void {
     switch(v) {
         IntValue(val): println(i2s(val));
@@ -164,70 +201,73 @@ printValue(v : Value) -> void {
     }
 }
 
-execBody(b : NeBody, vars : Tree<string, Value>) -> Maybe<Tree<string, Value>> {
-    switch(b) {
-        NePrint(e): {
-            res = calcExpValue(e, vars);
-            switch(res) {
-                None(): Some(vars);
-                Some(val): {
-                    printValue(val);
-                    Some(vars)
-                }
-            }
-        }
-        NeAssign(v, val): 
-        switch(calcExpValue(val, vars)) {
-            None(): None()
-            Some(newValue): {
-                Some(setTree(vars, v.str, newValue));
-            }
-        }
-        NeIf(cond, body):
-        switch(calcCondValue(cond, vars)) {
-            None(): None()
-            Some(c):
-            if (c) execBody(body, vars)
-            else Some(vars);
-        }
-        NeWhile(cond, body): {
-            switch(calcCondValue(cond, vars)) {
-                None(): None()
-                Some(c):
-                if (c) {
-                    switch(body) {
-                        NeAssign(var, val):         execBody(NeSeq([NeAssign(var, val), NeWhile(cond, body)]), vars)
-                        NePrint(e):                 execBody(NeSeq([NePrint(e), NeWhile(cond, body)]), vars)
-                        NeIf(ifcond, ifbody):       execBody(NeSeq([NeIf(ifcond, ifbody), NeWhile(cond, body)]), vars)
-                        NeWhile(whcond, whbody):    execBody(NeSeq([NeWhile(whcond, whbody), NeWhile(cond, body)]), vars)
-                        NeSeq(bodies):              execBody(NeSeq(concat(bodies, [NeWhile(cond, body)])), vars)
+execNode(node: Node, prog: VneProg) -> Pair<bool, DList<Node>> {
+    oper = getOperByLabel(node.label, prog);
+    result = switch(oper) {
+        None(): Pair(false, Some([node]));
+        Some(v): 
+        switch(v) {
+            VneIfElse(lab, cond, lm, rm): 
+                switch(calcCondValue(cond, node.values)) {
+                    None(): Pair(false, None());
+                    Some(res): if(res) {
+                        Pair(true, Some(map(lm, \label -> { Node(label.val, node.values) })))
+                    } else {
+                        Pair(true, Some(map(rm, \label -> { Node(label.val, node.values) })))
                     }
-                } else {
-                    execBody(NeIf(cond,body), vars)
+                }
+            VnePrint(lab, e, labels): { 
+                printVneExp(e, node.values);
+                Pair(true, Some(map(labels, \label -> { Node(label.val, node.values) })));
+            }
+            VneAssign(lab, var, e, labels): {
+                switch(calcExpValue(e, node.values)) {
+                    None(): Pair(false, None());
+                    Some(val): 
+                    switch(lookupTree(node.values, var.str)) {
+                        None(): Pair(false, None());
+                        Some(var_val): {
+                            upd_tree = setTree(node.values, var.str, val);
+                            Pair(true, Some(map(labels, \ label -> { Node(label.val, upd_tree) })))
+                        }
+                    }
                 }
             }
-        }
-        NeSeq(bodies): {
-            Some(fold(bodies, vars, \acc, body -> {
-                switch(execBody(body, acc)) {
-                    None(): acc
-                    Some(varsTree): mergeTreeCustom(acc, varsTree, \key, val1, val2 -> val1)
-                }
-            }))
         }
     }
+    arr : Maybe<[Node]> = result.second;
+    ret = switch(arr) {
+        None():makeDList();
+        Some(array): fold(array, makeDList(), \ q, n -> { pushDList(q, n); q});
+    }
+    Pair(result.first, ret)
 }
 
-initVars(p : NeProg) -> Tree<string, Value> {
+initVars(p : VneProg) -> Tree<string, Value> {
     fold(p.desc, makeTree(), \variables, d -> {
         switch(d.type) {
-            NeInt(): setTree(variables, d.name, IntValue(0));
-            NeArray(t): setTree(variables, d.name, ArrayValue([]));
+            VneInt(): setTree(variables, d.name, IntValue(0));
+            VneArray(t): setTree(variables, d.name, ArrayValue([]));
         }
     })
 }
 
-exec(p : NeProg) -> void {
-    variables : Tree<string, Value> = initVars(p);
-    endVars = execBody(p.body, variables);
+exec(p : VneProg) -> DList<Node> {
+    node = Node(0, initVars(p));
+    queue = makeDList();
+    pushDList(queue, node);
+    for(queue, \ q -> { !isEmptyDList(q) }, \ q -> {
+        switch(popFirstDList(q)) {
+            None(): makeDList();
+            Some(v): {
+                newQueue = execNode(v, p);
+                if(newQueue.first) {
+                    concatDList(q, newQueue.second);
+                    q
+                } else { 
+                    q 
+                }
+            }
+        }
+    });
 }

@@ -1,10 +1,12 @@
 import nemoVM;
+import translator;
 
 parseAndExec(s : string) -> void {
     prog = str2NeProg(s);
     switch(prog) {
         Some(neProg): {
-            exec(neProg);
+            q = exec(neProg2VneProg(neProg));
+            println("~~~finished~~~\n");
         };
         None(): println("incorrect program");
     }
