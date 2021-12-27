@@ -137,7 +137,7 @@ neOperators2VneOperators(oper: NeBody) -> [VneOperator] {
         NeWhile(cond, body): {
             newO = shiftLabels(neOperators2VneOperators(body), 1);
             newOEnd = maxLabel(newO);
-            concat([VneIfElse(0, neRel2VneRel(cond), [VneLabel(1), VneLabel(newOEnd)], [])],
+            concat([VneIfElse(0, neRel2VneRel(cond), [VneLabel(1)], [VneLabel(newOEnd)])],
                 changeLabels(newO, 0, newOEnd));
         }
         NePrint(e): [VnePrint(0, neExp2VneExp(e), [VneLabel(1)])];
