@@ -5,7 +5,8 @@ OOAD/
 OSs/
 Translation/*.bytecode
 Translation/*.debug
-Nets/lab?/CmakeLists.txt
-Nets/lab?/cmake-build-debug/
-Nets/lab?/.idea/
-Nets/lab?/*.iml
+*CmakeLists.txt
+*cmake-build-debug/
+*.idea/
+*.iml
+*.class

@@ -1,8 +1,9 @@
 exp = sum|sub|prod|div|int|var;
-sum = " "*"("" "* exp:l " "*"+"" "* exp:r " "*")"" "* {sumOp(:l, :r)};
-sub = " "*"("" "* exp:l " "*"-"" "* exp:r " "*")"" "* {subOp(:l, :r)};
-prod = " "*"("" "* exp:l " "*"*"" "* exp:r " "*")"" "* {prodOp(:l, :r)};
-div = " "*"("" "* exp:l " "*"/"" "* exp:r " "*")"" "* {divOp(:l, :r)};
+ws = " "*;
+sum = ws"("ws exp:l ws"+"ws exp:r ws")"ws {sumOp(:l, :r)};
+sub = ws"("ws exp:l ws"-"ws exp:r ws")"ws {subOp(:l, :r)};
+prod = ws"("ws exp:l ws"*"ws exp:r ws")"ws {prodOp(:l, :r)};
+div = ws"("ws exp:l ws"/"ws exp:r ws")"ws {divOp(:l, :r)};
 digit = '0'-'9';
 int = digit+ $i {ArInt(s2i($i))};
 letter = 'a'-'z';
