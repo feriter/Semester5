@@ -65,10 +65,8 @@ class InputHandler extends Thread {
     }
 
     public void run() {
-        try {
-            var fileOut = createFileWriter();
+        try (in; out; var fileOut = createFileWriter()) {
             downloadFile(fileOut);
-            fileOut.close();
             sendFileSizeCheck();
         } catch (IOException e) {
             e.printStackTrace();

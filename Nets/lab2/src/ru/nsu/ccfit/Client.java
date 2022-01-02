@@ -39,6 +39,7 @@ public class Client extends Thread {
             out.write(buffer, 0, charsRead);
             out.flush();
         }
+        fileReader.close();
     }
 
     private void checkUploadedFileSize() throws IOException {
@@ -55,7 +56,7 @@ public class Client extends Thread {
     }
 
     public void run() {
-        try {
+        try (in; out;) {
             sendHeader();
             sendFileContent();
             checkUploadedFileSize();
