@@ -31,7 +31,7 @@ parse(str : string) -> Maybe<ArExp> {
     result = parsic3(parser, str, 
         SemanticActions(mergeTree(defaultPegActions.t,
             pairs2tree([
-                Pair("sumOp", \s -> 
+                Pair("sumOp", \s ->
                     ArOp(sumF, s[0], s[1], "+")
                 ),
                 Pair("subOp", \s ->
@@ -248,7 +248,7 @@ Polynom2s(p : Polynom) -> string {
 }
 
 Frac2s(f : Frac) -> string {
-    Polynom2s(f.top) + "\n-------------------------     <- it's fraction sign\n" + Polynom2s(f.bot);
+    Polynom2s(f.top) + "\n-------------------------\n" + Polynom2s(f.bot);
 }
 
 main() {
