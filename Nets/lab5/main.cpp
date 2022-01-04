@@ -4,7 +4,7 @@
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        std::cerr << "port as an argument is needed" std::endl;
+        std::cerr << "port as an argument is needed" << std::endl;
         return -1;
     }
 
